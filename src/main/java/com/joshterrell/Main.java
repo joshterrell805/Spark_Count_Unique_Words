@@ -1,6 +1,7 @@
 package com.joshterrell;
 
 import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.impl.Arguments;
 import net.sourceforge.argparse4j.inf.*;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
@@ -29,11 +30,12 @@ public class Main {
     public static void main(String[] args) {
         Namespace ns = parseArgs(args);
         String path = ns.getString("file");
+        int limit = ns.getInt("limit");
 
         ApplicationContext context = new ClassPathXmlApplicationContext("Beans.xml");
         Main main = (Main) context.getBean("main");
 
-        main.run(path);
+        main.run(path, limit);
     }
 
     public static Namespace parseArgs(String[] args) {
@@ -41,7 +43,12 @@ public class Main {
                 .defaultHelp(true)
                 .description("count the unique words in a text file");
         parser.addArgument("file")
+                .type(String.class)
                 .help("path to a text file");
+        parser.addArgument("--limit")
+                .type(Integer.class)
+                .setDefault(10)
+                .help("how many results to limit to?");
 
         return parser.parseArgsOrFail(args);
     }
@@ -52,7 +59,7 @@ public class Main {
                 .setAppName(appName);
     }
 
-    public void run(String textFilePath) {
+    public void run(String textFilePath, int limit) {
         JavaRDD<String> lines = sc.textFile(textFilePath);
         JavaRDD<String> words = lines.flatMap((line) -> {
             String[] lineWords = line.split(" ");
@@ -64,10 +71,13 @@ public class Main {
                 .mapToPair((tup) -> tup.swap())
                 .sortByKey(false)
                 .mapToPair((tup) -> tup.swap());
+        List<Tuple2<String, Integer>> sortedWordCountsLocal = sortedWordCounts.take(limit);
 
-        List<Tuple2<String, Integer>> sortedWordCountsLocal = sortedWordCounts.collect();
+        int max_val = sortedWordCountsLocal.get(0)._2();
+        int max_digits = (int)Math.floor(Math.log10(max_val)) + 1;
+        String fmt = "%" + max_digits + "d: %s\n";
         sortedWordCountsLocal.forEach((tup) -> {
-            System.out.printf("%2d: %s\n", tup._2(), tup._1());
+            System.out.printf(fmt, tup._2(), tup._1());
         });
     }
 }
